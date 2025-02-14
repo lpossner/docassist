@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ask a Question</title>
+    <style>
+        body {
+            font-family: "Arial", sans-serif;
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+            text-align: center;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        input,
+        button {
+            width: 90%;
+            padding: 10px;
+            margin-top: 8px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            font-size: 16px;
+        }
+
+        input {
+            text-align: center;
+        }
+
+        .toggle-btn.play {
+            background-color: green;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .toggle-btn.stop {
+            background-color: red;
+            width: 50px;
+            height: 50px;
+            border-radius: 0;
+            position: relative;
+        }
+
+        .toggle-btn:disabled {
+            background-color: #ccc;
+        }
+
+        #answer {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            width: 90%;
+            text-align: center;
+            vertical-align: middle;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 50px;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        li {
+            background: #f1f1f1;
+            margin: 5px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .loader-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .center-button-wrapper {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .disabled {
+            pointer-events: none;
+            opacity: 0.6;
+        }
+    </style>
+    <script src="static/marked.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Ask a Question</h1>
+        <form id="question-form">
+            <input type="text" id="question" name="question" required disabled>
+            <div class="center-button-wrapper">
+                <button id="playStopButton" class="toggle-btn play" type="button"></button>
+            </div>
+        </form>
+
+        <div id="answer"></div>
+
+        <div style="height: 20px;"></div>
+
+        <form id="knowledge-form">
+            <label for="question">Knowledge</label>
+            <ul id="knowledgeList"></ul>
+            <div class="center-button-wrapper">
+                <button id="playStopKnowledgeButton" class="toggle-btn play" type="button"></button>
+            </div>
+        </form>
+    </div>
+    <script>
+        marked.setOptions({
+            breaks: true
+        });
+
+        let answer = "";
+
+        function fetchKnowledgeList() {
+            const list = document.getElementById("knowledgeList");
+            list.innerHTML = "";
+            fetch("/documents", { method: "GET" })
+                .then(response => {
+                    if (response.ok) {
+                        return response
+                    } else {
+                        throw new Error("No audio recorded");
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    data.documents.forEach(str => {
+                        const li = document.createElement("li");
+                        li.textContent = str;
+                        list.appendChild(li);
+                    });
+                })
+                .catch(err => console.error("Fetch failed:", err));
+        }
+
+        function disableUI(exclude_element = null) {
+            document.querySelectorAll("button").forEach(button => {
+                if (button == exclude_element) {
+                    return;
+                }
+                button.classList.add("disabled");
+            });
+        }
+
+        function enableUI() {
+            document.querySelectorAll("button").forEach(button => {
+                button.classList.remove("disabled");
+            });
+        }
+
+        fetchKnowledgeList()
+
+        document.getElementById("playStopButton").addEventListener("click", function (event) {
+            event.preventDefault();
+            if (this.classList.contains("play")) {
+                document.getElementById("answer").innerHTML = "";
+                document.getElementById("question").value = "";
+                this.classList.remove("play");
+                this.classList.add("stop");
+                fetch("/start_recording", { method: "POST" })
+                    .then(response => {
+                        if (response.ok) {
+                            disableUI(this);
+                        } else {
+                            document.getElementById("question").value = "No audio recorded";
+                            enableUI();
+                            throw new Error("No audio recorded");
+                        }
+                    })
+                    .catch(err => console.error("Fetch failed:", err));
+            } else {
+                this.classList.remove("stop");
+                this.classList.add("play");
+                document.getElementById("answer").innerHTML = "<div class='loader-container'><div class='loader'></div></div>";
+                fetch("/stop_recording", { method: "POST" })
+                    .then(response => {
+                        if (response.ok) {
+                            disableUI();
+                            return response
+                        } else {
+                            document.getElementById("question").value = "No audio recorded";
+                            document.getElementById("answer").innerHTML = "";
+                            enableUI();
+                            throw new Error("No audio recorded");
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data) {
+                            document.getElementById("question").value = data.text;
+                            askQuestion(data.text);
+                        } else {
+                            document.getElementById("question").value = "No audio recorded";
+                            document.getElementById("answer").innerHTML = "";
+                            enableUI();
+                            throw new Error("No audio recorded");
+                        }
+                    })
+                    .catch(err => console.error("Fetch failed:", err));
+            }
+        });
+
+        function askQuestion(questionText) {
+            const questionInput = document.getElementById("question");
+            const answerDiv = document.getElementById("answer");
+            const buttons = document.querySelectorAll("button");
+            fetch("/ask", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: questionText })
+            })
+                .then(response => {
+                    if (response.ok) {
+                        const eventSource = new EventSource("/stream");
+                        answerDiv.innerHTML = ""; // Clear loader once streaming starts
+                        answer = "";
+
+                        eventSource.onmessage = function (event) {
+                            if (event.data === "[DONE]") {
+                                eventSource.close();
+                                enableUI();
+                            } else {
+                                answer += event.data; // Append streamed text
+                                answerDiv.innerHTML = marked.parse(answer);
+                            }
+                        };
+
+                        eventSource.onerror = function (event) {
+                            document.getElementById("question").value = "No audio recorded";
+                            document.getElementById("answer").innerHTML = "";
+                            enableUI();
+                            console.error("SSE Error:", event);
+                            if (event.eventPhase === EventSource.CLOSED) {
+                                console.error("Stream closed by server.");
+                                return;
+                            }
+                            throw new Error("No audio recorded");
+                        };
+                    } else {
+                        document.getElementById("answer").innerHTML = "No audio recorded";
+                        enableUI();
+                        throw new Error("No audio recorded");
+                    }
+
+                })
+                .catch(err => console.error("Fetch failed:", err))
+        }
+
+        document.getElementById("playStopKnowledgeButton").addEventListener("click", function (event) {
+            event.preventDefault();
+            if (this.classList.contains("play")) {
+                this.classList.remove("play");
+                this.classList.add("stop");
+                fetch("/start_recording", { method: "POST" })
+                    .then(response => {
+                        if (response.ok) {
+                            disableUI(this);
+                        } else {
+                            document.getElementById("answer").innerHTML = "No audio recorded";
+                            enableUI();
+                            throw new Error("No audio recorded");
+                        }
+                    })
+                    .catch(err => console.error("Fetch failed:", err));
+            } else {
+                this.classList.remove("stop");
+                this.classList.add("play");
+
+                const li = document.createElement("li");
+                li.innerHTML = "<div class='loader-container'><div class='loader'></div></div>";
+                document.getElementById("knowledgeList").appendChild(li);
+
+                fetch("/stop_recording", { method: "POST" })
+                    .then(response => {
+                        if (response.ok) {
+                            disableUI();
+                            return response
+                        } else {
+                            enableUI();
+                            fetchKnowledgeList();
+                            throw new Error("No audio recorded");
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data) {
+                            fetch("/documents", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ documents: [data.text] })
+                            })
+                                .then(response => {
+                                    if (response.ok) {
+                                        return response
+                                    } else {
+                                        enableUI();
+                                        fetchKnowledgeList();
+                                        throw new Error("No audio recorded");
+                                    }
+                                })
+                                .then(response => response.json())
+                                .then(() => fetchKnowledgeList())
+                                .then(() => enableUI());
+                        }
+                    })
+                    .catch(err => console.error("Fetch failed:", err))
+            }
+        });
+
+    </script>
+</body>
+
+</html>
